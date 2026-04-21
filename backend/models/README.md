@@ -18,7 +18,7 @@ After running `python train.py`, you'll find:
 
 **Option 1: Manual Copy**
 ```bash
-scp backend/models/pt_skin_model.pth user@other-computer:~/HackRUF25/backend/models/
+scp backend/models/pt_skin_model.pth user@other-computer:~/MTC-Hackathon/backend/models/
 ```
 
 **Option 2: Cloud Storage**

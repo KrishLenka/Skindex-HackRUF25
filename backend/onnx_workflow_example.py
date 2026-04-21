@@ -28,7 +28,7 @@ def workflow_example():
     print("-"*70)
     print("Commands:")
     print("  cd backend")
-    print("  python train.py --num-classes 25 --epochs 50")
+    print("  python train.py --data_dir data_scin --epochs 50")
     print("\n→ Creates: models/pt_skin_model.pth")
     print("→ Accuracy: ~66%")
     
@@ -51,7 +51,7 @@ def workflow_example():
     print("Commands:")
     print("  # Add class weights and use EfficientNet-B3")
     print("  python train.py \\")
-    print("    --num-classes 25 \\")
+    print("    --data_dir data_scin \\")
     print("    --model efficientnet_b3 \\")
     print("    --epochs 100")
     print("\n→ Creates: models/pt_skin_model.pth (overwrites)")
@@ -82,7 +82,7 @@ baseline = ONNXModelWrapper('models/skin_baseline_v1.onnx')
 improved = ONNXModelWrapper('models/skin_improved_v2.onnx')
 
 # Test on validation images
-test_images = list(Path('data/val').rglob('*.jpg'))[:100]
+test_images = list(Path('data_scin/val').rglob('*.jpg'))[:100]
 
 baseline_correct = 0
 improved_correct = 0

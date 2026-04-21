@@ -41,7 +41,7 @@ const Header = () => {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-blue-800 leading-tight">
-                  Skindex
+                  DermAI
                 </h1>
                 <p className="text-sm text-gray-600 leading-tight">
                   Your trusted AI dermatology consultant

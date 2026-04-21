@@ -24,15 +24,15 @@ import seaborn as sns
 
 # Configuration
 class Config:
-    # Data
-    data_dir = Path("data")
+    # Data (SCIN: run prepare_scin_data.py → data_scin/train, data_scin/val)
+    data_dir = Path("data_scin")
     train_dir = data_dir / "train"
     val_dir = data_dir / "val"
     test_dir = data_dir / "test"
     
     # Model
     model_name = "efficientnet_b0"  # can be changed to efficientnet_b3, resnet50, etc.
-    num_classes = 10  # 10 skin conditions
+    num_classes = 8  # 8 SCIN skin condition categories
     img_size = 224
     pretrained = True
     
@@ -332,7 +332,7 @@ def main(args):
         config.learning_rate = args.lr
     if args.model:
         config.model_name = args.model
-    if args.num_classes:
+    if args.num_classes is not None:
         config.num_classes = args.num_classes
     
     # Create directories
@@ -343,18 +343,14 @@ def main(args):
     # Check if data directories exist
     if not config.train_dir.exists():
         print(f"Error: Training data directory not found: {config.train_dir}")
-        print("\nExpected directory structure:")
-        print("data/")
-        print("  train/")
-        print("    healthy/")
-        print("      image1.jpg")
-        print("      image2.jpg")
-        print("    unhealthy/")
-        print("      image1.jpg")
-        print("      image2.jpg")
-        print("  val/")
-        print("    healthy/")
-        print("    unhealthy/")
+        print("\nExpected directory structure (SCIN):")
+        print("data_scin/")
+        print("  train/<condition_name>/*.jpg")
+        print("  val/<condition_name>/*.jpg")
+        print("\nCreate it from the raw SCIN download:")
+        print("  gsutil -m cp -r gs://dx-scin-public-data/dataset scin_data/")
+        print("  python prepare_scin_data.py --scin_root ../scin_data --target_dir data_scin")
+        print("  python train.py --data_dir data_scin")
         return
     
     # Print device information
@@ -391,6 +387,10 @@ def main(args):
         transform=val_transform,
         classes=train_dataset.classes  # Use same class order
     )
+    
+    if args.num_classes is None:
+        config.num_classes = len(train_dataset.classes)
+        print(f"\nInferred num_classes={config.num_classes} from training folders")
     
     # Create dataloaders
     # Pin memory only for CUDA to speed up transfer to GPU
@@ -557,12 +557,22 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train skin lesion classification model')
-    parser.add_argument('--data_dir', type=str, default='data', help='Path to data directory')
+    parser.add_argument(
+        '--data_dir',
+        type=str,
+        default='data_scin',
+        help='Root with train/ and val/ class subfolders (output of prepare_scin_data.py)',
+    )
     parser.add_argument('--batch_size', type=int, help='Batch size for training')
     parser.add_argument('--epochs', type=int, help='Number of epochs')
     parser.add_argument('--lr', type=float, help='Learning rate')
     parser.add_argument('--model', type=str, help='Model architecture (e.g., efficientnet_b0)')
-    parser.add_argument('--num_classes', type=int, help='Number of classes (2 for binary)')
+    parser.add_argument(
+        '--num_classes',
+        type=int,
+        default=None,
+        help='Number of classes (default: infer from train folder count)',
+    )
     
     args = parser.parse_args()
     main(args)

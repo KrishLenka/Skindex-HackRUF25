@@ -1,10 +1,8 @@
-Actinic keratosis
-Atopic Dermatitis
-Benign keratosis
-Dermatofibroma
-Healthy Skin
-Melanocytic nevus
-Melanoma
-Squamous cell carcinoma
-Tinea Ringworm Candidiasis
-Vascular lesion
+ACNE
+GROWTH_OR_MOLE
+HAIR_LOSS
+LOOKS_HEALTHY
+NAIL_PROBLEM
+OTHER_HAIR_PROBLEM
+PIGMENTARY_PROBLEM
+RASH

@@ -1,9 +1,37 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Alert, AlertDescription } from './ui/alert';
-import { Upload, FileText, AlertTriangle, CheckCircle, Camera, X } from 'lucide-react';
+import { Upload, FileText, AlertTriangle, CheckCircle, Camera, X, ChevronDown, MessageCircle, Send } from 'lucide-react';
+
+const BODY_PARTS = [
+  { value: "HEAD_OR_NECK",       label: "Head or Neck" },
+  { value: "ARM",                label: "Arm" },
+  { value: "PALM",               label: "Palm" },
+  { value: "BACK_OF_HAND",       label: "Back of Hand" },
+  { value: "TORSO_FRONT",        label: "Torso — Front" },
+  { value: "TORSO_BACK",         label: "Torso — Back" },
+  { value: "GENITALIA_OR_GROIN", label: "Genitalia or Groin" },
+  { value: "BUTTOCKS",           label: "Buttocks" },
+  { value: "LEG",                label: "Leg" },
+  { value: "FOOT_TOP_OR_SIDE",   label: "Foot — Top or Side" },
+  { value: "FOOT_SOLE",          label: "Foot — Sole" },
+  { value: "OTHER",              label: "Other" },
+];
+
+const SYMPTOM_OPTIONS = [
+  { value: "BOTHERSOME_APPEARANCE", label: "Bothersome appearance" },
+  { value: "BLEEDING",              label: "Bleeding" },
+  { value: "INCREASING_SIZE",       label: "Increasing size" },
+  { value: "DARKENING",             label: "Darkening" },
+  { value: "ITCHING",               label: "Itching" },
+  { value: "BURNING",               label: "Burning" },
+  { value: "PAIN",                  label: "Pain" },
+  { value: "NO_RELEVANT_EXPERIENCE", label: "No relevant symptoms" },
+];
 
 // map backend 'urgency' to a severity label for your UI
 function mapUrgencyToSeverity(urgency) {
@@ -76,14 +104,34 @@ function buildReport(prediction, confidencePct) {
 }
 
 const ImageUpload = () => {
+  const { token, user } = useAuth();
+  const navigate = useNavigate();
+
+  // Profile is considered complete when at least age_group and sex_at_birth are set
+  const profileComplete = user && user.age_group && user.sex_at_birth;
   const [uploadedImage, setUploadedImage] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState('');
   const [error, setError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState(null);
+
+  // Scan context
+  const [bodyPart, setBodyPart]       = useState('');
+  const [symptoms, setSymptoms]       = useState([]);
+  const [description, setDescription] = useState('');
+
+  const toggleSymptom = (value) => {
+    setSymptoms((prev) =>
+      prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value]
+    );
+  };
   
   const fileInputRef = useRef(null);
   const analysisRef = useRef(null);
@@ -229,6 +277,9 @@ const ImageUpload = () => {
     setIsAnalyzing(true);
     setError('');
     setAnalysisResult(null);
+    setChatMessages([]);
+    setChatInput('');
+    setChatError('');
     setAnalysisProgress(5);
 
     const interval = setInterval(() => {
@@ -272,7 +323,7 @@ const ImageUpload = () => {
             .slice(0, 3)
         : [];
 
-      setAnalysisResult({
+      const result = {
         condition: report.condition,
         confidence: safeConfidence,
         severity: report.severity,
@@ -281,7 +332,26 @@ const ImageUpload = () => {
         areas: [],
         differentialDx: alts,
         _raw: data,
-      });
+      };
+      setAnalysisResult(result);
+
+      // Silently save scan to history if user is logged in
+      if (token) {
+        fetch('/api/scans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            body_part:       bodyPart,
+            symptoms,
+            description,
+            image_b64:       uploadedImage.preview,
+            condition:       result.condition,
+            confidence:      result.confidence,
+            severity:        result.severity,
+            recommendations: result.recommendations,
+          }),
+        }).catch((err) => console.warn('Could not save scan to history:', err));
+      }
 
       setAnalysisProgress(100);
     } catch (e) {
@@ -307,11 +377,62 @@ const ImageUpload = () => {
     }
   }, [analysisResult]);
 
+  const sendDiagnosisChat = async () => {
+    const text = chatInput.trim();
+    if (!text || chatLoading || !analysisResult) return;
+    setChatError('');
+    setChatLoading(true);
+    const historyPayload = chatMessages.map(({ role, content }) => ({ role, content }));
+    setChatInput('');
+    try {
+      const res = await fetch('/api/diagnosis-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: historyPayload,
+          context: {
+            condition: analysisResult.condition,
+            confidence: analysisResult.confidence,
+            severity: analysisResult.severity,
+            description: analysisResult.description,
+            recommendations: analysisResult.recommendations,
+            differentialDx: analysisResult.differentialDx,
+            bodyPart,
+            symptoms,
+            notes: description,
+          },
+        }),
+      });
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await res.json() : {};
+      if (!res.ok) {
+        throw new Error(data.error || data.detail || `Chat failed (${res.status})`);
+      }
+      setChatMessages((m) => [
+        ...m,
+        { role: 'user', content: text },
+        { role: 'assistant', content: data.reply || '' },
+      ]);
+    } catch (e) {
+      setChatError(e?.message || 'Could not get a reply.');
+      setChatInput(text);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const removeImage = () => {
     setUploadedImage(null);
     setAnalysisResult(null);
+    setChatMessages([]);
+    setChatInput('');
+    setChatError('');
     setAnalysisProgress(0);
     setError('');
+    setBodyPart('');
+    setSymptoms([]);
+    setDescription('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -414,7 +535,7 @@ const ImageUpload = () => {
         <main className="w-full p-6">
           <div className="w-full">      
             <h1 className="text-2xl font-bold text-gray-900 mb-4">
-              Skindex Skin Consultation
+              DermAI Skin Consultation
             </h1>
 
             {/* Error banner */}
@@ -445,7 +566,17 @@ const ImageUpload = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4">
-                  {!uploadedImage ? (
+                  {/* Gate: must be logged in to use the upload area at all */}
+                  {!user ? (
+                    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+                      <Upload className="w-16 h-16 text-gray-300" />
+                      <p className="text-gray-600 font-medium">Sign in to analyse your skin</p>
+                      <p className="text-sm text-gray-400">Create a free account to upload images and get AI-powered results.</p>
+                      <Button onClick={() => navigate('/login')} className="bg-rose-600 hover:bg-rose-700 mt-2">
+                        Sign in / Register
+                      </Button>
+                    </div>
+                  ) : !uploadedImage ? (
                     <div 
                       onDragEnter={handleDragEnter}
                       onDragOver={handleDragOver}
@@ -502,6 +633,61 @@ const ImageUpload = () => {
                         <div>Size: {formatFileSize(uploadedImage.size)}</div>
                       </div>
 
+                      {/* ── Scan context form ── */}
+                      <div className="w-full border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-4 text-sm">
+                        <p className="font-semibold text-gray-800">Tell us more about this image</p>
+
+                        {/* Body part */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Body part</label>
+                          <div className="relative">
+                            <select
+                              value={bodyPart}
+                              onChange={(e) => setBodyPart(e.target.value)}
+                              className="w-full appearance-none rounded border border-gray-300 bg-white px-3 py-2 pr-8 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                            >
+                              <option value="">Select body part…</option>
+                              {BODY_PARTS.map((bp) => (
+                                <option key={bp.value} value={bp.value}>{bp.label}</option>
+                              ))}
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 w-4 h-4 text-gray-400" />
+                          </div>
+                        </div>
+
+                        {/* Symptoms (multi-select checkboxes) */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-2">Symptoms (select all that apply)</label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {SYMPTOM_OPTIONS.map((s) => (
+                              <label key={s.value} className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={symptoms.includes(s.value)}
+                                  onChange={() => toggleSymptom(s.value)}
+                                  className="rounded border-gray-300 text-rose-600 focus:ring-rose-400"
+                                />
+                                <span className="text-gray-800 text-xs">{s.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Description */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Description <span className="font-normal text-gray-500">(optional)</span>
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder="Describe what you're feeling in further detail…"
+                            className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-rose-400 resize-none"
+                          />
+                        </div>
+                      </div>
+
                       {/* Progress while analyzing */}
                       {isAnalyzing && (
                         <div className="w-full">
@@ -511,13 +697,41 @@ const ImageUpload = () => {
                       )}
 
                       <div className="flex gap-2 w-full">
-                        <Button 
-                          onClick={handleAnalyze} 
-                          disabled={isAnalyzing}
-                          className="flex-1 bg-green-700 hover:bg-green-800"
-                        >
-                          {isAnalyzing ? 'Processing...' : 'Analyze Image'}
-                        </Button>
+                        {!user ? (
+                          <Button
+                            onClick={() => navigate('/login')}
+                            className="flex-1 bg-rose-600 hover:bg-rose-700"
+                          >
+                            Sign in to analyse
+                          </Button>
+                        ) : !profileComplete ? (
+                          <div className="flex-1">
+                            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 mb-2">
+                              Please complete your{' '}
+                              <button
+                                onClick={() => navigate('/profile')}
+                                className="font-semibold underline hover:text-amber-900"
+                              >
+                                health profile
+                              </button>{' '}
+                              before analysing an image.
+                            </div>
+                            <Button
+                              onClick={() => navigate('/profile')}
+                              className="w-full bg-rose-600 hover:bg-rose-700"
+                            >
+                              Complete profile
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={handleAnalyze}
+                            disabled={isAnalyzing}
+                            className="flex-1 bg-green-700 hover:bg-green-800"
+                          >
+                            {isAnalyzing ? 'Processing...' : 'Analyze Image'}
+                          </Button>
+                        )}
                         <Button variant="outline" onClick={removeImage} className="flex-none">
                           Remove
                         </Button>
@@ -611,6 +825,72 @@ const ImageUpload = () => {
                             <strong>DISCLAIMER:</strong> This analysis tool is intended to provide general health information and support for individuals who have not consulted a healthcare professional. It is not a substitute for medical advice, diagnosis, or treatment. If you have a pressing or serious health concern, you should consult a qualified healthcare provider for proper evaluation and care.
                           </AlertDescription>
                         </Alert>
+
+                        {/* Follow-up Q&A (Featherless AI — key on server) */}
+                        <div className="border border-rose-200 rounded-lg bg-rose-50/50 p-4 space-y-3">
+                          <h3 className="font-bold text-gray-900 flex items-center gap-2 text-base">
+                            <MessageCircle className="w-5 h-5 text-rose-700" />
+                            Ask about your result
+                          </h3>
+                          <p className="text-xs text-gray-600">
+                            Ask follow-up questions to better understand this screening and general self-care. Replies are for education only — not a diagnosis. The assistant uses{' '}
+                            <span className="font-medium">DeepSeek</span> on the server; set{' '}
+                            <code className="text-[11px] bg-white/80 px-1 rounded">DEEPSEEK_API_KEY</code> in your backend environment.
+                          </p>
+                          {chatError && (
+                            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">{chatError}</p>
+                          )}
+                          <div className="max-h-64 overflow-y-auto rounded border border-gray-200 bg-white p-3 space-y-3 text-sm">
+                            {chatMessages.length === 0 && (
+                              <p className="text-gray-500 text-xs italic">
+                                Example: &ldquo;What does this confidence score mean?&rdquo; or &ldquo;What should I do before seeing a doctor?&rdquo;
+                              </p>
+                            )}
+                            {chatMessages.map((msg, i) => (
+                              <div
+                                key={i}
+                                className={msg.role === 'user' ? 'text-right' : 'text-left'}
+                              >
+                                <span
+                                  className={
+                                    msg.role === 'user'
+                                      ? 'inline-block rounded-lg bg-rose-100 text-gray-900 px-3 py-2 max-w-[95%] text-left'
+                                      : 'inline-block rounded-lg bg-gray-100 text-gray-800 px-3 py-2 max-w-[95%]'
+                                  }
+                                >
+                                  {msg.content}
+                                </span>
+                              </div>
+                            ))}
+                            {chatLoading && (
+                              <p className="text-xs text-gray-500 animate-pulse">Thinking…</p>
+                            )}
+                          </div>
+                          <div className="flex gap-2 items-end">
+                            <textarea
+                              rows={2}
+                              value={chatInput}
+                              onChange={(e) => setChatInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  sendDiagnosisChat();
+                                }
+                              }}
+                              disabled={chatLoading}
+                              placeholder="Type a question… (Enter to send, Shift+Enter for newline)"
+                              className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-rose-400 resize-none disabled:opacity-60"
+                            />
+                            <Button
+                              type="button"
+                              onClick={sendDiagnosisChat}
+                              disabled={chatLoading || !chatInput.trim()}
+                              className="bg-rose-600 hover:bg-rose-700 shrink-0"
+                            >
+                              <Send className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

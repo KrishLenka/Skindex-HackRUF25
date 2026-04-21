@@ -29,7 +29,7 @@ const Header = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold text-blue-800 leading-tight">
-                Skindex
+                DermAI
               </h1>
               <p className="text-sm text-gray-600 leading-tight">
                 Your trusted AI dermatology consultant
@@ -153,20 +153,7 @@ const AIAssistant = () => {
     scrollToBottom();
   }, [messages]);
 
-  const clinicalResponses = [
-    {
-      keywords: ['acne', 'comedones', 'papules', 'pustules'],
-      response: 'ACNE VULGARIS - ICD-10: L70.0\n\nCLINICAL PRESENTATION: Inflammatory and non-inflammatory lesions including open/closed comedones, papules, pustules, and potentially nodules/cysts primarily affecting pilosebaceous units.\n\nDIAGNOSTIC CRITERIA: Clinical diagnosis based on characteristic lesion morphology and distribution. Severity grading: mild (comedonal), moderate (inflammatory papulopustular), severe (nodulocystic).\n\nTREATMENT PROTOCOL:\n- Mild: Topical retinoids + benzoyl peroxide or topical antibiotics\n- Moderate: Above + oral antibiotics (doxycycline 100mg BID)\n- Severe: Consider oral isotretinoin consultation\n\nMONITORING: Reassess at 8-12 weeks. Document response, side effects, adherence.\n\nWould you like specific information about treatment protocols, contraindications, or patient counseling points?'
-    },
-    {
-      keywords: ['eczema', 'dermatitis', 'atopic', 'contact'],
-      response: 'DERMATITIS CLASSIFICATION - Multiple ICD-10 codes depending on type\n\nDIFFERENTIAL DIAGNOSIS:\n- Atopic Dermatitis (L20): Chronic, pruritic, personal/family history of atopy\n- Contact Dermatitis (L23/L24): Acute/chronic, well-demarcated, exposure history\n- Seborrheic Dermatitis (L21): Erythematous scaling, sebaceous areas\n- Stasis Dermatitis (L87.2): Lower extremities, chronic venous insufficiency\n\nDIAGNOSTIC APPROACH:\n1. Detailed history (triggers, timeline, family history)\n2. Physical examination (distribution pattern, morphology)\n3. Consider patch testing for suspected contact allergens\n4. KOH prep if fungal infection suspected\n\nMANAGEMENT PRINCIPLES:\n- Trigger identification and avoidance\n- Skin barrier restoration (emollients)\n- Anti-inflammatory therapy (topical corticosteroids/calcineurin inhibitors)\n- Patient education on chronic disease management\n\nRequire specific guidance on a particular dermatitis subtype?'
-    },
-    {
-      keywords: ['melanoma', 'mole', 'pigmented lesion', 'abcde'],
-      response: 'MELANOCYTIC LESION EVALUATION - High Priority Assessment\n\nABCDE CRITERIA for Melanoma:\n- A: Asymmetry (one half unlike the other)\n- B: Border irregularity (scalloped, poorly defined)\n- C: Color variation (multiple colors within lesion)\n- D: Diameter >6mm (size of pencil eraser)\n- E: Evolution (changes in size, shape, color, symptoms)\n\nUGLY DUCKLING SIGN: Lesion that looks different from patient\'s other moles\n\nHIGH-RISK FEATURES:\n- New pigmented lesion in adult >30 years\n- Changing lesion (patient-reported evolution)\n- Symptomatic lesion (bleeding, itching, pain)\n- Irregular borders, multiple colors, diameter >6mm\n\nIMMEDIATE ACTION REQUIRED:\nAny suspicious lesion warrants urgent dermatology referral for dermoscopy and potential biopsy. DO NOT delay evaluation.\n\nDERMATOSCOPY: If available, assess for specific features (asymmetric pigment pattern, blue-white veil, irregular vessels).\n\nDOCUMENTATION: Photograph lesions, measure dimensions, document patient concerns.\n\nTimeframe for referral and patient counseling guidance needed?'
-    }
-  ];
+  const [chatError, setChatError] = useState('');
 
   const commonQueries = [
     "Differential diagnosis for erythematous scaly patches",
@@ -175,7 +162,7 @@ const AIAssistant = () => {
     "Topical corticosteroid potency classification"
   ];
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
     const newUserMessage = {
@@ -189,31 +176,39 @@ const AIAssistant = () => {
     setMessages(prev => [...prev, newUserMessage]);
     setInputMessage('');
     setIsProcessing(true);
+    setChatError('');
 
-    // Simulate AI processing
-    setTimeout(() => {
-      const lowerInput = inputMessage.toLowerCase();
-      let responseContent = "Thank you for your clinical inquiry. Based on current evidence-based guidelines and clinical protocols, I recommend consulting the most recent clinical practice guidelines for this condition. For specific patient cases, please ensure all clinical findings, patient history, and examination results are considered in your diagnostic and treatment decisions.\n\nCould you provide more specific clinical details about the presentation, patient demographics, or particular aspect of management you're seeking guidance on?";
+    // Build history for the API (exclude the initial greeting)
+    const history = messages.slice(1).map(m => ({
+      role: m.type === 'user' ? 'user' : 'assistant',
+      content: m.content,
+    }));
 
-      // Check for clinical responses
-      for (let response of clinicalResponses) {
-        if (response.keywords.some(keyword => lowerInput.includes(keyword))) {
-          responseContent = response.response;
-          break;
-        }
+    try {
+      const res = await fetch('/api/diagnosis-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: inputMessage, history }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setChatError(data.error || 'Something went wrong. Please try again.');
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now() + 1,
+          type: 'assistant',
+          content: data.reply,
+          timestamp: new Date().toLocaleTimeString(),
+          sessionId: 'CDS-001'
+        }]);
       }
-
-      const assistantMessage = {
-        id: Date.now() + 1,
-        type: 'assistant',
-        content: responseContent,
-        timestamp: new Date().toLocaleTimeString(),
-        sessionId: 'CDS-001'
-      };
-
-      setMessages(prev => [...prev, assistantMessage]);
+    } catch (err) {
+      setChatError('Could not reach the server. Make sure the backend is running.');
+    } finally {
       setIsProcessing(false);
-    }, 2000);
+    }
   };
 
   const handleKeyPress = (e) => {
@@ -229,8 +224,6 @@ const AIAssistant = () => {
 
   return (
     <div className="min-h-screen bg-white">
-      <Header />
-      
       <div>
         <main className="w-full p-6">
           {/* Breadcrumb removed */}
@@ -335,6 +328,13 @@ const AIAssistant = () => {
                   ))}
                 </div>
                 
+                {/* Error message */}
+                {chatError && (
+                  <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 mb-2">
+                    {chatError}
+                  </div>
+                )}
+
                 {/* Input Area */}
                 <div className="flex gap-2">
                   <div className="flex-1">

@@ -356,7 +356,7 @@ def main():
                        help='Output ONNX model path')
     parser.add_argument('--model-name', type=str, default='efficientnet_b0',
                        help='Model architecture name')
-    parser.add_argument('--num-classes', type=int, default=10,
+    parser.add_argument('--num-classes', type=int, default=8,
                        help='Number of output classes')
     parser.add_argument('--img-size', type=int, default=224,
                        help='Input image size')

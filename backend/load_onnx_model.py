@@ -153,7 +153,7 @@ def example_single_image():
     model = ONNXModelWrapper('models/skin_model.onnx')
     
     # Predict on an image
-    test_image = 'data/test/Healthy_Skin/image001.jpg'
+    test_image = 'data_scin/test/Eczema/example.jpg'  # use any image under data_scin/test/<class>/
     result = model.predict(test_image)
     
     print(f"Image: {test_image}")
@@ -176,7 +176,7 @@ def example_batch_processing():
     model = ONNXModelWrapper('models/skin_model.onnx')
     
     # Get test images
-    test_images = list(Path('data/test').rglob('*.jpg'))[:5]
+    test_images = list(Path('data_scin/test').rglob('*.jpg'))[:5]
     
     print(f"Processing {len(test_images)} images...\n")
     
@@ -197,7 +197,7 @@ def example_version_comparison():
     model_v1 = ONNXModelWrapper('models/skin_model_v1.onnx')
     model_v2 = ONNXModelWrapper('models/skin_model_v2.onnx')
     
-    test_image = 'data/test/Melanoma/test_image.jpg'
+    test_image = 'data_scin/test/<YourConditionFolder>/some_image.jpg'
     
     # Get predictions from both
     result_v1 = model_v1.predict(test_image)
@@ -235,7 +235,7 @@ def example_custom_postprocessing():
         # ... add all 25 classes
     ]
     
-    test_image = 'data/test/Melanoma/image.jpg'
+    test_image = 'data_scin/test/<YourConditionFolder>/some_image.jpg'
     result = model.predict(test_image)
     
     # Custom logic: Check if high-risk condition

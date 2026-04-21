@@ -11,6 +11,9 @@ env/
 ENV/
 .venv
 
+# SQLite runtime database
+backend/instance/
+
 # IDE
 .vscode/
 .idea/
@@ -24,21 +27,16 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
 
 # Environment variables
 .env
 .env.local
 
-# Large data files (don't commit to git)
-backend/data/train/*
-backend/data/val/*
-backend/data/test/*
-backend/data/Healthy\ Skin/
-backend/data/vitiligo/
-!backend/data/train/.gitkeep
-!backend/data/val/.gitkeep
-!backend/data/test/.gitkeep
+# Large data (do not commit)
+# Raw SCIN download from GCS (~12+ GB): gs://dx-scin-public-data/dataset
+scin_data/
+# Prepared train/val/test folders from prepare_scin_data.py (copies of images)
+data_scin/
 
 # Model outputs (too large for git)
 backend/models/*.pth
@@ -46,7 +44,9 @@ backend/models/*.pt
 backend/models/*.h5
 backend/models/*.onnx
 backend/models/*.pb
+!backend/models/pt_skin_model.pth
 !backend/models/.gitkeep
+!backend/models/README.md
 
 # Training outputs
 backend/checkpoints/*.pth

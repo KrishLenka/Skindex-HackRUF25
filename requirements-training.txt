@@ -1,12 +1,13 @@
 # Essential packages for training only
-# Flask API
-Flask==3.0.0
-flask-cors==4.0.0
 
 # Machine Learning - PyTorch (for training)
 torch>=2.0.0
 torchvision>=0.15.0
 timm>=0.9.0
+
+# HuggingFace - for loading SCIN dataset
+datasets>=2.14.0
+huggingface_hub>=0.20.0
 
 # Image Processing
 Pillow>=10.0.0

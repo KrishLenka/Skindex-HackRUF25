@@ -17,7 +17,7 @@ const Header = () => (
             <Activity className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-blue-800 leading-tight">Skindex</h1>
+            <h1 className="text-xl font-bold text-blue-800 leading-tight">DermAI</h1>
             <p className="text-sm text-gray-600 leading-tight">Your trusted AI dermatology consultant</p>
           </div>
         </div>

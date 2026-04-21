@@ -2,31 +2,44 @@
 import io
 import os
 import json
+import ssl
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    import sys
+
+    print(
+        "Warning: python-dotenv is not installed; .env will not be loaded. "
+        "Run: pip install python-dotenv",
+        file=sys.stderr,
+    )
 
 from PIL import Image
 import numpy as np
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from auth import auth_bp, db
 
-app = Flask(__name__)
-CORS(
-    app,
-    resources={r"/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]}},
-    methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
-)
-
-# TensorFlow / Keras
-import tensorflow as tf
+# TensorFlow / Keras (install tensorflow separately if needed)
+try:
+    import tensorflow as tf
+except ImportError:
+    tf = None
 
 # PyTorch
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
-import timm  # if your PyTorch model uses timm
+import timm
 
 # ONNX Runtime
 import onnxruntime as ort
@@ -34,24 +47,26 @@ import onnxruntime as ort
 # ---------------------------
 # CONFIG - update these paths
 # ---------------------------
-MODEL_DIR = Path("models")
+MODEL_DIR = Path(__file__).resolve().parent / "models"
 TF_MODEL_PATH = MODEL_DIR / "tf_skin_model"    # either SavedModel dir or .h5
-PYTORCH_MODEL_PATH = MODEL_DIR / "pt_skin_model.pth"
+# Training writes pt_skin_model.pth; best_model.pth is the full checkpoint — use whichever exists
+PYTORCH_MODEL_PATH = next(
+    (MODEL_DIR / n for n in ("pt_skin_model.pth", "best_model.pth") if (MODEL_DIR / n).is_file()),
+    MODEL_DIR / "pt_skin_model.pth",
+)
 ONNX_MODEL_PATH = MODEL_DIR / "skin_model.onnx"
 
 # Load class names from training (will be auto-populated during training)
 # Default classes for the 10-class skin condition dataset
 CLASS_NAMES = [
-    "Actinic keratosis",
-    "Atopic Dermatitis",
-    "Benign keratosis",
-    "Dermatofibroma",
-    "Healthy Skin",
-    "Melanocytic nevus",
-    "Melanoma",
-    "Squamous cell carcinoma",
-    "Tinea Ringworm Candidiasis",
-    "Vascular lesion"
+    "ACNE",
+    "GROWTH_OR_MOLE",
+    "HAIR_LOSS",
+    "LOOKS_HEALTHY",
+    "NAIL_PROBLEM",
+    "OTHER_HAIR_PROBLEM",
+    "PIGMENTARY_PROBLEM",
+    "RASH",
 ]
 IMG_SIZE = 224
 # Automatically detect best available device: NVIDIA CUDA > Apple Silicon MPS > CPU
@@ -63,7 +78,44 @@ else:
     DEVICE = "cpu"
 # ---------------------------
 
+# DeepSeek — OpenAI-compatible chat API (https://api-docs.deepseek.com/)
+DEEPSEEK_API_URL = os.environ.get(
+    "DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions"
+)
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-me-before-deploying")
+_DB_PATH = Path(__file__).parent / "instance" / "users.db"
+_DB_PATH.parent.mkdir(exist_ok=True)
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{_DB_PATH}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+CORS(
+    app,
+    resources={r"/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]}},
+    methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+db.init_app(app)
+app.register_blueprint(auth_bp)
+
+with app.app_context():
+    db.create_all()
+    # Seed a demo user on first run so fresh clones are immediately usable
+    from auth import User
+    from werkzeug.security import generate_password_hash
+    if not User.query.first():
+        demo = User(
+            name="Demo User",
+            email="demo@dermai.com",
+            password_hash=generate_password_hash("test1234"),
+        )
+        db.session.add(demo)
+        db.session.commit()
+        print("[seed] Created demo user: demo@dermai.com / test1234")
 
 # ---------------------------
 # Preprocessing helpers
@@ -125,7 +177,7 @@ try:
     if TF_MODEL_PATH.suffix == ".h5":
         tf_model = tf.keras.models.load_model(str(TF_MODEL_PATH))
     else:
-        tf_model = tf.keras.models.load_model(str(TF_MODEL_PATH))  # works for SavedModel dir also
+        tf_model = tf.keras.models.load_model(str(TF_MODEL_PATH))
     print("Loaded TensorFlow model.")
 except Exception as e:
     print("Warning: TF model load failed:", e)
@@ -134,7 +186,6 @@ except Exception as e:
 # 2) PyTorch model
 pt_model = None
 try:
-    # Define the same architecture you trained. Example using timm EfficientNet_b0:
     class PTWrapper(torch.nn.Module):
         def __init__(self, model_name="efficientnet_b0", n_classes=len(CLASS_NAMES), pretrained=False, dropout=0.3):
             super().__init__()
@@ -153,7 +204,6 @@ try:
 
     pt_model = PTWrapper(model_name="efficientnet_b0", n_classes=len(CLASS_NAMES), pretrained=False, dropout=0.3)
     state = torch.load(str(PYTORCH_MODEL_PATH), map_location=DEVICE)
-    # if saved with checkpoint dict:
     if isinstance(state, dict) and "model_state_dict" in state:
         state = state["model_state_dict"]
     pt_model.load_state_dict(state)
@@ -264,86 +314,59 @@ def ensemble_predict(probs_list: List[np.ndarray], class_names: List[str]) -> Di
     }
 
 # ---------------------------
-# Advice mapping - customize for 25 classes
+# Advice mapping for 8 SCIN classes
 # ---------------------------
-def get_advice(condition_name):
-    """Generate advice based on condition name with intelligent fallback"""
-    
-    # High urgency conditions (malignant/serious)
-    high_urgency_keywords = [
-        "malignant", "melanoma", "carcinoma", "cancer", "lesion"
-    ]
-    
-    # Medium urgency (infectious, inflammatory)
-    medium_urgency_keywords = [
-        "infection", "bacterial", "fungal", "viral", "herpes", "hiv", "std",
-        "cellulitis", "impetigo", "vasculitis", "lupus"
-    ]
-    
-    # Low urgency (benign, cosmetic)
-    low_urgency_keywords = [
-        "benign", "healthy", "keratoses", "hair loss", "alopecia",
-        "pigmentation", "vitiligo"
-    ]
-    
-    condition_lower = condition_name.lower()
-    
-    # Check for high urgency
-    if any(keyword in condition_lower for keyword in high_urgency_keywords):
-        return {
-            "short": f"Possible {condition_name}. Immediate dermatologist consultation recommended for evaluation and possible biopsy.",
-            "urgency": "high",
-            "recommendation": "Schedule urgent dermatology appointment"
-        }
-    
-    # Check for medium urgency
-    elif any(keyword in condition_lower for keyword in medium_urgency_keywords):
-        return {
-            "short": f"{condition_name} detected. Medical evaluation recommended for diagnosis and treatment.",
-            "urgency": "medium",
-            "recommendation": "Schedule dermatology appointment within 1-2 weeks"
-        }
-    
-    # Check for healthy skin
-    elif "healthy" in condition_lower:
-        return {
-            "short": "Skin appears healthy. Continue regular skin checks and sun protection.",
-            "urgency": "low",
-            "recommendation": "Maintain routine skin care and monitoring"
-        }
-    
-    # Low urgency or general case
-    else:
-        return {
-            "short": f"Possible {condition_name}. Consider dermatology consultation for proper diagnosis and management.",
-            "urgency": "medium",
-            "recommendation": "Schedule dermatology appointment if symptoms persist or worsen"
-        }
-
-
-# Specific advice for known conditions (optional override)
+# Specific advice for the 8 SCIN skin condition classes
 SPECIFIC_ADVICE = {
-    "Healthy_Skin": {
-        "short": "Skin appears healthy. Continue regular monitoring and sun protection.",
+    "LOOKS_HEALTHY": {
+        "short": "Skin appears healthy. Continue regular skin checks and use sun protection daily.",
         "urgency": "low",
-        "recommendation": "Maintain good skin care routine"
+        "recommendation": "Maintain good skin care routine and monitor for changes"
     },
-    "Melanoma Skin Cancer Nevi and Moles": {
-        "short": "URGENT: Possible melanoma or suspicious mole. Immediate dermatologist evaluation required.",
-        "urgency": "high",
-        "recommendation": "Schedule URGENT dermatology appointment for biopsy"
-    },
-    "Actinic Keratosis Basal Cell Carcinoma and other Malignant Lesions": {
-        "short": "URGENT: Possible malignant lesion. Immediate dermatologist evaluation required.",
-        "urgency": "high",
-        "recommendation": "Schedule URGENT dermatology appointment"
-    },
-    "vitiligo": {
-        "short": "Vitiligo detected - a skin condition causing loss of pigmentation. Consult dermatologist for treatment options.",
+    "ACNE": {
+        "short": "Possible acne detected. Keep the area clean and avoid picking. Consider over-the-counter treatments.",
         "urgency": "low",
-        "recommendation": "Schedule dermatology appointment for management options"
-    }
+        "recommendation": "Try OTC benzoyl peroxide or salicylic acid; see a dermatologist if persistent"
+    },
+    "GROWTH_OR_MOLE": {
+        "short": "Possible growth or mole detected. Have it evaluated by a dermatologist — some growths require biopsy.",
+        "urgency": "high",
+        "recommendation": "Schedule a dermatology appointment for evaluation and possible biopsy"
+    },
+    "RASH": {
+        "short": "Possible rash detected. Avoid irritants and monitor for spreading. Seek medical advice if worsening.",
+        "urgency": "medium",
+        "recommendation": "See a doctor if rash spreads, worsens, or is accompanied by fever"
+    },
+    "PIGMENTARY_PROBLEM": {
+        "short": "Pigmentation change detected (e.g., vitiligo or hyperpigmentation). Consult a dermatologist for treatment options.",
+        "urgency": "low",
+        "recommendation": "Schedule a dermatology appointment to discuss management options"
+    },
+    "HAIR_LOSS": {
+        "short": "Hair loss detected. This may be alopecia or a related condition. Medical evaluation recommended.",
+        "urgency": "medium",
+        "recommendation": "See a dermatologist to determine the cause and explore treatment options"
+    },
+    "OTHER_HAIR_PROBLEM": {
+        "short": "Hair or scalp condition detected. Evaluation by a dermatologist can determine the best treatment.",
+        "urgency": "medium",
+        "recommendation": "Schedule a dermatology appointment if symptoms persist or worsen"
+    },
+    "NAIL_PROBLEM": {
+        "short": "Nail condition detected (possible fungal infection or nail disease). Medical evaluation recommended.",
+        "urgency": "medium",
+        "recommendation": "See a dermatologist or doctor for proper diagnosis and treatment"
+    },
 }
+
+def get_advice(condition_name):
+    """Fallback advice for any condition not covered by SPECIFIC_ADVICE."""
+    return {
+        "short": f"Possible {condition_name} detected. Consider consulting a dermatologist for proper diagnosis.",
+        "urgency": "medium",
+        "recommendation": "Schedule a dermatology appointment if symptoms persist or worsen"
+    }
 
 # ---------------------------
 # Routes
@@ -425,6 +448,125 @@ def predict():
                               "Not a medical diagnosis. Seek a qualified clinician for medical advice.")
 
     return jsonify(response)
+
+
+def _build_diagnosis_system_prompt(ctx: Dict[str, Any]) -> str:
+    """Context from the client about the screening result (educational chat only)."""
+    lines = [
+        "You are a supportive health-education assistant. The user reviewed an AI-assisted "
+        "skin image screening from a demo app — this is NOT a medical diagnosis.",
+        "",
+        "Screening context (background only):",
+    ]
+    if ctx.get("condition"):
+        lines.append(f"- Condition label: {ctx['condition']}")
+    if ctx.get("confidence") is not None:
+        lines.append(f"- Model confidence: {ctx['confidence']}%")
+    if ctx.get("severity"):
+        lines.append(f"- Severity (UI): {ctx['severity']}")
+    if ctx.get("description"):
+        lines.append(f"- Summary: {ctx['description']}")
+    recs = ctx.get("recommendations") or []
+    if isinstance(recs, list) and recs:
+        lines.append("- General tips already shown: " + "; ".join(str(r) for r in recs[:8]))
+    dx = ctx.get("differentialDx") or []
+    if isinstance(dx, list) and dx:
+        lines.append("- Other possibilities mentioned: " + ", ".join(str(x) for x in dx[:6]))
+    if ctx.get("bodyPart"):
+        lines.append(f"- Body area (user): {ctx['bodyPart']}")
+    syms = ctx.get("symptoms") or []
+    if isinstance(syms, list) and syms:
+        lines.append(f"- Symptoms (user): {', '.join(str(s) for s in syms)}")
+    if ctx.get("notes"):
+        lines.append(f"- Extra notes (user): {ctx['notes']}")
+    lines.extend(
+        [
+            "",
+            "Guidelines:",
+            "- Explain in plain language; suggest general self-care and when to seek in-person care.",
+            "- Never claim certainty or that this chat replaces a clinician; encourage dermatology for changing or worrying lesions.",
+            "- If asked for a definitive diagnosis, say only a qualified professional can diagnose.",
+            "- Keep answers concise and practical.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+@app.route("/diagnosis-chat", methods=["POST"])
+def diagnosis_chat():
+    """Proxy to DeepSeek chat API; API key stays on the server."""
+    if not DEEPSEEK_API_KEY:
+        return jsonify(
+            {
+                "error": "Diagnosis chat is not configured. Set the DEEPSEEK_API_KEY environment variable on the server.",
+            }
+        ), 503
+
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get("message") or "").strip()
+    if not user_message:
+        return jsonify({"error": "message is required"}), 400
+    if len(user_message) > 8000:
+        return jsonify({"error": "message too long"}), 400
+
+    history = data.get("history") or []
+    if not isinstance(history, list):
+        history = []
+    trimmed: List[Dict[str, str]] = []
+    for item in history[-24:]:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = (item.get("content") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        if len(content) > 8000:
+            content = content[:8000]
+        trimmed.append({"role": role, "content": content})
+
+    ctx = data.get("context")
+    if not isinstance(ctx, dict):
+        ctx = {}
+    system_prompt = _build_diagnosis_system_prompt(ctx)
+
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    messages.extend(trimmed)
+    messages.append({"role": "user", "content": user_message})
+
+    payload = json.dumps(
+        {
+            "model": DEEPSEEK_MODEL,
+            "messages": messages,
+            "temperature": 0.6,
+            "max_tokens": 1024,
+        }
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        DEEPSEEK_API_URL,
+        data=payload,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120, context=ssl.create_default_context()) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        return jsonify({"error": "Chat provider error", "detail": err_body[:500]}), 502
+    except urllib.error.URLError as e:
+        return jsonify({"error": "Could not reach chat provider", "detail": str(e)}), 502
+
+    try:
+        parsed = json.loads(raw)
+        reply = parsed["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
+        return jsonify({"error": "Unexpected response from chat provider", "detail": str(e)}), 502
+
+    return jsonify({"reply": reply})
 
 
 if __name__ == "__main__":
