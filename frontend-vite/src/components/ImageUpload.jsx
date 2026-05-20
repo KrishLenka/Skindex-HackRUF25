@@ -33,7 +33,12 @@ const SYMPTOM_OPTIONS = [
   { value: "NO_RELEVANT_EXPERIENCE", label: "No relevant symptoms" },
 ];
 
-// map backend 'urgency' to a severity label for your UI
+/**
+ * Maps varying backend string urgency labels to a standardized frontend severity level.
+ *
+ * @param {string} urgency - Raw urgency string (from prediction API).
+ * @returns {string} Standardized severity: "High", "Moderate", or "Low".
+ */
 function mapUrgencyToSeverity(urgency) {
   switch ((urgency || '').toLowerCase()) {
     case 'urgent-dermatologist':
@@ -50,7 +55,13 @@ function mapUrgencyToSeverity(urgency) {
   }
 }
 
-// Simple, hard-coded summaries for now
+/**
+ * Utility function to generate localized report text arrays based on the prediction.
+ *
+ * @param {string} prediction - The identified skin condition string.
+ * @param {number} confidencePct - The float representing AI confidence [0, 100].
+ * @returns {Object} Report details including condition, severity, description, and recommendations.
+ */
 function buildReport(prediction, confidencePct) {
   const label = (prediction || '').toLowerCase();
 
@@ -103,6 +114,14 @@ function buildReport(prediction, confidencePct) {
   };
 }
 
+/**
+ * Central interface for handling image uploads, rendering the device camera feed,
+ * and presenting the diagnostic API results side-by-side with DeepSeek's AI Assistant.
+ *
+ * Features drag-and-drop, dynamic form context aggregation, and model validation.
+ *
+ * @returns {JSX.Element} The ImageUpload component.
+ */
 const ImageUpload = () => {
   const { token, user } = useAuth();
   const navigate = useNavigate();
@@ -127,6 +146,10 @@ const ImageUpload = () => {
   const [symptoms, setSymptoms]       = useState([]);
   const [description, setDescription] = useState('');
 
+  /**
+   * Toggles the presence of a symptom in the local symptom array state.
+   * @param {string} value - The intrinsic symptom identifier.
+   */
   const toggleSymptom = (value) => {
     setSymptoms((prev) =>
       prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value]
@@ -140,6 +163,10 @@ const ImageUpload = () => {
   const [previewExpanded, setPreviewExpanded] = useState(true);
 
   // Handle file processing (common for both upload and drag-drop)
+  /**
+   * Processes a file by confirming format and converting it to a base64 Data URL for preview.
+   * @param {File} file - The image blob to process.
+   */
   const processFile = (file) => {
     setError('');
     if (file && file.type.startsWith('image/')) {
@@ -160,6 +187,10 @@ const ImageUpload = () => {
     }
   };
 
+  /**
+   * Triggered when a user picks an image from the standard file input.
+   * @param {React.ChangeEvent} event - Input change event.
+   */
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (file) processFile(file);
@@ -172,17 +203,29 @@ const ImageUpload = () => {
     setIsDragging(true);
   };
 
+  /**
+   * Resets the drag state indicator when a file leaves the drag bounds.
+   * @param {React.DragEvent} e - The drag event.
+   */
   const handleDragLeave = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
   };
 
+  /**
+   * Prevents default browser handling for file drop hovering.
+   * @param {React.DragEvent} e - The drag event.
+   */
   const handleDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
   };
 
+  /**
+   * Handles the drop of a new image file into the dropzone boundaries.
+   * @param {React.DragEvent} e - The drag event.
+   */
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -195,6 +238,10 @@ const ImageUpload = () => {
   };
 
   // Camera functions
+  /**
+   * Initiates the device's main environmental camera stream for live analysis capture.
+   * @returns {Promise<void>}
+   */
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -216,6 +263,9 @@ const ImageUpload = () => {
     }
   };
 
+  /**
+   * Terminates active media tracks and closes the camera modal.
+   */
   const stopCamera = () => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
@@ -224,6 +274,9 @@ const ImageUpload = () => {
     setShowCamera(false);
   };
 
+  /**
+   * Reads the current `<video>` frame onto a `<canvas>`, dumps to blob, and sets as active image.
+   */
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
@@ -271,6 +324,11 @@ const ImageUpload = () => {
   }, [stream]);
 
   // Real backend call
+  /**
+   * Bundles the selected image and metadata, dispatching to the PyTorch prediction API.
+   * Generates a mocked simulation of progress until the API returns successfully.
+   * @returns {Promise<void>}
+   */
   const handleAnalyze = async () => {
     if (!uploadedImage?.file) return;
 
@@ -377,6 +435,11 @@ const ImageUpload = () => {
     }
   }, [analysisResult]);
 
+  /**
+   * Submits a question to the localized DeepSeek AI assistant session, preserving context.
+   * Context includes both historical QA messages and the underlying skin analysis report.
+   * @returns {Promise<void>}
+   */
   const sendDiagnosisChat = async () => {
     const text = chatInput.trim();
     if (!text || chatLoading || !analysisResult) return;
@@ -422,6 +485,9 @@ const ImageUpload = () => {
     }
   };
 
+  /**
+   * Resets local state entirely to begin a fresh scan iteration.
+   */
   const removeImage = () => {
     setUploadedImage(null);
     setAnalysisResult(null);
@@ -436,6 +502,11 @@ const ImageUpload = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  /**
+   * Pretty-prints raw byte lengths.
+   * @param {number} bytes - Extracted from `File.size`.
+   * @returns {string} e.g. "1.5 MB".
+   */
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;

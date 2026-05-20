@@ -3,6 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { Activity, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
+/**
+ * Manages dual authentication flows for existing users (Login) and new users (Register).
+ * Handles input validation, visibility toggling for passwords, and session hydration.
+ *
+ * @returns {JSX.Element} The Login/Register view component.
+ */
 export default function Login() {
   const { login, register } = useAuth();
   const navigate             = useNavigate();
@@ -16,6 +22,9 @@ export default function Login() {
   const [error, setError]       = useState("");
   const [busy, setBusy]         = useState(false);
 
+  /**
+   * Clears the current form state payload and error boundary.
+   */
   const reset = () => {
     setError("");
     setName("");
@@ -24,11 +33,19 @@ export default function Login() {
     setConfirm("");
   };
 
+  /**
+   * Switches the active flow between Login and Register modes, zeroing out form state.
+   */
   const toggleMode = () => {
     reset();
     setMode((m) => (m === "login" ? "register" : "login"));
   };
 
+  /**
+   * Validates form input locally before routing credentials to the authentication API context.
+   *
+   * @param {React.FormEvent} e - Form event.
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");

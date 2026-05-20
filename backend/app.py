@@ -124,24 +124,53 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 def pil_to_numpy(img: Image.Image, size=IMG_SIZE) -> np.ndarray:
-    """Resize and return HxWxC float32 image scaled to [0,1]."""
+    """Resizes a PIL image and converts it to a normalized numpy array.
+
+    Args:
+        img (Image.Image): The input image.
+        size (int, optional): Target dimensions (size x size). Defaults to IMG_SIZE.
+
+    Returns:
+        np.ndarray: Image array of shape (H, W, C) with floats shifted to [0.0, 1.0].
+    """
     img = img.convert("RGB")
     img = img.resize((size, size), Image.BILINEAR)
     arr = np.asarray(img).astype(np.float32) / 255.0
     return arr
 
 def normalize_imagenet(img_np: np.ndarray) -> np.ndarray:
-    """Normalize using ImageNet mean/std. Expects HWC float in [0,1]."""
+    """Normalizes an image array using ImageNet mean and standard deviation.
+
+    Args:
+        img_np (np.ndarray): Input float32 array in shape (H, W, C) scaled to [0, 1].
+
+    Returns:
+        np.ndarray: Normalized array.
+    """
     return (img_np - IMAGENET_MEAN) / IMAGENET_STD
 
 def prepare_for_tf(img_np: np.ndarray) -> np.ndarray:
-    """Return batched NHWC float32 for TF."""
+    """Prepares an image array for TensorFlow inference.
+
+    Args:
+        img_np (np.ndarray): HWC float32 array.
+
+    Returns:
+        np.ndarray: Batched NHWC array.
+    """
     x = normalize_imagenet(img_np)
     x = np.expand_dims(x.astype(np.float32), axis=0)
     return x
 
 def prepare_for_torch(img_np: np.ndarray) -> torch.Tensor:
-    """Return batched NCHW torch tensor on DEVICE."""
+    """Prepares an image array for PyTorch inference and moves it to the target DEVICE.
+
+    Args:
+        img_np (np.ndarray): HWC float32 array.
+
+    Returns:
+        torch.Tensor: Batched NCHW PyTorch tensor.
+    """
     x = normalize_imagenet(img_np)
     x = np.transpose(x, (2,0,1))  # HWC -> CHW
     x = np.expand_dims(x, axis=0)
@@ -149,7 +178,14 @@ def prepare_for_torch(img_np: np.ndarray) -> torch.Tensor:
     return t
 
 def prepare_for_onnx(img_np: np.ndarray) -> np.ndarray:
-    """Return batched input for ONNX (NCHW) as float32 numpy."""
+    """Prepares an image array for ONNX Runtime inference.
+
+    Args:
+        img_np (np.ndarray): HWC float32 array.
+
+    Returns:
+        np.ndarray: Batched NCHW NumPy array.
+    """
     x = normalize_imagenet(img_np)
     x = np.transpose(x, (2,0,1))  # CHW
     x = np.expand_dims(x, axis=0)
@@ -187,6 +223,7 @@ except Exception as e:
 pt_model = None
 try:
     class PTWrapper(torch.nn.Module):
+        """Wrapper over the timm model to match the custom head from training."""
         def __init__(self, model_name="efficientnet_b0", n_classes=len(CLASS_NAMES), pretrained=False, dropout=0.3):
             super().__init__()
             self.backbone = timm.create_model(model_name, pretrained=pretrained, num_classes=0, global_pool='avg')
@@ -198,6 +235,14 @@ try:
                 torch.nn.Linear(512, n_classes)
             )
         def forward(self, x):
+            """Forward pass for the PyTorch model wrapper.
+
+            Args:
+                x (torch.Tensor): Input image tensor.
+
+            Returns:
+                torch.Tensor: Logits.
+            """
             x = self.backbone(x)
             x = self.head(x)
             return x
@@ -236,7 +281,17 @@ print("Available models:", AVAILABLE_MODELS)
 # Inference wrappers
 # ---------------------------
 def predict_tf(img_np: np.ndarray) -> np.ndarray:
-    """Run TF model => returning softmax probabilities as 1D numpy array."""
+    """Runs inference using the TensorFlow model.
+
+    Args:
+        img_np (np.ndarray): Preprocessed but unbatched numpy array.
+
+    Returns:
+        np.ndarray: 1D array of softmax probabilities.
+
+    Raises:
+        RuntimeError: If the TF model was not loaded successfully.
+    """
     if tf_model is None:
         raise RuntimeError("TF model not loaded")
     x = prepare_for_tf(img_np)  # NHWC
@@ -245,6 +300,17 @@ def predict_tf(img_np: np.ndarray) -> np.ndarray:
     return probs
 
 def predict_pt(img_np: np.ndarray) -> np.ndarray:
+    """Runs inference using the PyTorch model.
+
+    Args:
+        img_np (np.ndarray): Preprocessed but unbatched numpy array.
+
+    Returns:
+        np.ndarray: 1D array of softmax probabilities.
+
+    Raises:
+        RuntimeError: If the PyTorch model was not loaded successfully.
+    """
     if pt_model is None:
         raise RuntimeError("PyTorch model not loaded")
     x = prepare_for_torch(img_np)  # NCHW torch tensor
@@ -254,6 +320,17 @@ def predict_pt(img_np: np.ndarray) -> np.ndarray:
     return probs
 
 def predict_onnx(img_np: np.ndarray) -> np.ndarray:
+    """Runs inference using the ONNX model Runtime.
+
+    Args:
+        img_np (np.ndarray): Preprocessed but unbatched numpy array.
+
+    Returns:
+        np.ndarray: 1D array of softmax probabilities.
+
+    Raises:
+        RuntimeError: If the ONNX session was not created successfully.
+    """
     if onnx_sess is None:
         raise RuntimeError("ONNX model not loaded")
     x = prepare_for_onnx(img_np)  # NCHW numpy
@@ -266,6 +343,14 @@ def predict_onnx(img_np: np.ndarray) -> np.ndarray:
     return probs
 
 def softmax_numpy(x: np.ndarray) -> np.ndarray:
+    """Applies the softmax function to a 1D numpy array.
+
+    Args:
+        x (np.ndarray): The input array.
+
+    Returns:
+        np.ndarray: The array after softmax.
+    """
     e = np.exp(x - np.max(x))
     return e / e.sum()
 
@@ -273,9 +358,17 @@ def softmax_numpy(x: np.ndarray) -> np.ndarray:
 # Ensemble logic
 # ---------------------------
 def ensemble_predict(probs_list: List[np.ndarray], class_names: List[str]) -> Dict:
-    """
-    probs_list: list of 1D arrays from each model (length = n_classes)
-    returns dict with per-model top predictions and ensemble summary.
+    """Averages probabilities across multiple models to produce a final ensemble prediction.
+
+    Calculates an agreement score and applies a confidence penalty if models disagree.
+
+    Args:
+        probs_list (List[np.ndarray]): List of 1D probability arrays from the individual models.
+        class_names (List[str]): List of ordered string labels.
+
+    Returns:
+        Dict: A dictionary mapping individual model predictions, the final chosen label wrapper,
+              and specific calibrated confidence scores.
     """
     # stack and check shapes
     probs_stack = np.vstack(probs_list)  # shape (n_models, n_classes)
@@ -373,6 +466,11 @@ def get_advice(condition_name):
 # ---------------------------
 @app.route("/ping", methods=["GET"])
 def ping():
+    """Health check endpoint to verify API and model status.
+
+    Returns:
+        Response: JSON representation of API status and available models.
+    """
     return jsonify({"status": "ok", "models": AVAILABLE_MODELS})
 
 @app.route("/predict", methods=["POST"])
@@ -451,7 +549,17 @@ def predict():
 
 
 def _build_diagnosis_system_prompt(ctx: Dict[str, Any]) -> str:
-    """Context from the client about the screening result (educational chat only)."""
+    """Builds the deep-seek system prompt based on user context.
+
+    Incorporates the AI diagnosis results and user-supplied descriptions to generate
+    an intelligent, conversational prompt that strictly maintains medical disclaimers.
+
+    Args:
+        ctx (Dict[str, Any]): Client-supplied context about the scan and severity.
+
+    Returns:
+        str: Complex system instructions.
+    """
     lines = [
         "You are a supportive health-education assistant. The user reviewed an AI-assisted "
         "skin image screening from a demo app — this is NOT a medical diagnosis.",
@@ -494,7 +602,14 @@ def _build_diagnosis_system_prompt(ctx: Dict[str, Any]) -> str:
 
 @app.route("/diagnosis-chat", methods=["POST"])
 def diagnosis_chat():
-    """Proxy to DeepSeek chat API; API key stays on the server."""
+    """Proxy route to forward user questions to the DeepSeek Chat API.
+
+    Prevents exposing the DeepSeek API key to the client browser by executing the
+    HTTP request safely on the backend.
+
+    Returns:
+        Response: Contains {"reply": str} on success or a standard error code payload.
+    """
     if not DEEPSEEK_API_KEY:
         return jsonify(
             {

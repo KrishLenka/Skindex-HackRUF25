@@ -24,6 +24,14 @@ import seaborn as sns
 
 # Configuration
 class Config:
+    """Global configuration wrapper for dataset, model hyperparameters, and execution state.
+
+    Attributes:
+        data_dir (Path): Root directory containing SCIN subsets.
+        model_name (str): Identifier for the architecture backbone to load from PyTorch image models.
+        num_classes (int): Final output size of the custom classification layer.
+        img_size (int): Image scaling dimensions (W, H).
+    """
     # Data (SCIN: run prepare_scin_data.py → data_scin/train, data_scin/val)
     data_dir = Path("data_scin")
     train_dir = data_dir / "train"
@@ -68,7 +76,15 @@ class Config:
 
 
 class SkinLesionDataset(Dataset):
-    """Dataset for skin lesion images organized in folders by class"""
+    """PyTorch Dataset wrapper for hierarchically structured image directories.
+
+    Dynamically locates subdirectories and maps them to contiguous integer labels.
+
+    Attributes:
+        root_dir (Path): The parent directory containing class sub-folders.
+        transform (callable, optional): The transform pipeline applied to the image.
+        classes (list[str]): An alphabetical list of class names found.
+    """
     
     def __init__(self, root_dir, transform=None, classes=None):
         self.root_dir = Path(root_dir)
@@ -103,9 +119,18 @@ class SkinLesionDataset(Dataset):
         print("Class distribution:", class_counts)
     
     def __len__(self):
+        """Returns the total number of samples in the dataset."""
         return len(self.samples)
     
     def __getitem__(self, idx):
+        """Fetches the image and label for a given index.
+
+        Args:
+            idx (int): The index of the sample.
+
+        Returns:
+            tuple[torch.Tensor, int]: The transformed image tensor and its corresponding integer label.
+        """
         img_path, label = self.samples[idx]
         
         # Load image
@@ -118,7 +143,16 @@ class SkinLesionDataset(Dataset):
 
 
 def get_transforms(img_size=224, augment=False):
-    """Get train and validation transforms"""
+    """Constructs the Torchvision data transformations for images.
+
+    Args:
+        img_size (int, optional): Output size of the resized square images. Defaults to 224.
+        augment (bool, optional): Whether to inject random distortion transforms into the training pipeline
+                                  to prevent over-fitting. Defaults to False.
+
+    Returns:
+        tuple[callable, callable]: The configured training and validation transform pipelines.
+    """
     
     # Normalization (ImageNet stats)
     normalize = transforms.Normalize(
@@ -154,8 +188,13 @@ def get_transforms(img_size=224, augment=False):
 
 
 class SkinClassificationModel(nn.Module):
-    """
-    Wrapper model using timm backbone with custom head
+    """Custom wrapper model binding a `timm` feature generator to a bespoke classification head.
+
+    Args:
+        model_name (str, optional): `timm` compatible backbone name. Defaults to "efficientnet_b0".
+        num_classes (int, optional): Output size for classification. Defaults to 2.
+        pretrained (bool, optional): Auto-download ImageNet pre-learned weights. Defaults to True.
+        dropout (float, optional): Rate of neuron deactivation for regularization. Defaults to 0.3.
     """
     def __init__(self, model_name="efficientnet_b0", num_classes=2, pretrained=True, dropout=0.3):
         super().__init__()
@@ -180,13 +219,32 @@ class SkinClassificationModel(nn.Module):
         )
     
     def forward(self, x):
+        """Forward pass of the model.
+
+        Args:
+            x (torch.Tensor): Input batch of images.
+
+        Returns:
+            torch.Tensor: Logits for each class.
+        """
         features = self.backbone(x)
         out = self.head(features)
         return out
 
 
 def train_epoch(model, dataloader, criterion, optimizer, device):
-    """Train for one epoch"""
+    """Executes a single end-to-end training epoch forward/backward pass.
+
+    Args:
+        model (nn.Module): The classification neural network.
+        dataloader (DataLoader): Train data stream generator.
+        criterion (callable): Loss calculation hook.
+        optimizer (optim.Optimizer): Model weight updater hook.
+        device (str): Destination hardware identifier (e.g. cuda).
+
+    Returns:
+        tuple[float, float]: Epoch average loss and normalized accuracy percentage (0-100).
+    """
     model.train()
     running_loss = 0.0
     correct = 0
@@ -220,7 +278,18 @@ def train_epoch(model, dataloader, criterion, optimizer, device):
 
 
 def validate(model, dataloader, criterion, device, num_classes=2):
-    """Validate the model"""
+    """Executes inference phase across validation split, producing granular metrics.
+
+    Args:
+        model (nn.Module): The compiled neural network.
+        dataloader (DataLoader): Validation split stream generator.
+        criterion (callable): Loss calculation hook.
+        device (str): Destination hardware identifier.
+        num_classes (int, optional): Used for ROC AUC calculations. Defaults to 2.
+
+    Returns:
+        tuple[float, float, np.ndarray, np.ndarray, float]: Average loss, total accuracy, raw predictions array, actual labels, and calculated ROC AUC score.
+    """
     model.eval()
     running_loss = 0.0
     correct = 0

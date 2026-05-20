@@ -23,7 +23,17 @@ from train import SkinLesionDataset, SkinClassificationModel, Config
 
 
 def plot_roc_curves(y_true, y_probs, classes, save_path):
-    """Plot ROC curves for each class"""
+    """Generates and saves Receiver Operating Characteristic (ROC) curves.
+
+    Supports both binary and multi-class (one-vs-rest) evaluation depending on
+    the number of configured classes.
+
+    Args:
+        y_true (np.ndarray): Array of true class integer labels.
+        y_probs (np.ndarray): 2D array of class probability confidences.
+        classes (list[str]): List of string names corresponding to the indices.
+        save_path (str | Path): Destination file path for the generated plot.
+    """
     n_classes = len(classes)
     
     plt.figure(figsize=(10, 8))
@@ -57,7 +67,14 @@ def plot_roc_curves(y_true, y_probs, classes, save_path):
 
 
 def plot_precision_recall_curves(y_true, y_probs, classes, save_path):
-    """Plot precision-recall curves"""
+    """Generates and saves Precision-Recall evaluation curves.
+
+    Args:
+        y_true (np.ndarray): Array of true class integer labels.
+        y_probs (np.ndarray): 2D array of class probability confidences.
+        classes (list[str]): List of string names corresponding to the indices.
+        save_path (str | Path): Destination file path for the generated plot.
+    """
     n_classes = len(classes)
     
     plt.figure(figsize=(10, 8))
@@ -88,7 +105,18 @@ def plot_precision_recall_curves(y_true, y_probs, classes, save_path):
 
 
 def evaluate_model(model, dataloader, device, classes):
-    """Evaluate model and return predictions and metrics"""
+    """Evaluates a loaded model against a test set and produces a granular metrics packet.
+
+    Args:
+        model (nn.Module): The compiled classification network.
+        dataloader (DataLoader): Data stream for the test partition.
+        device (str): Destination hardware identifier.
+        classes (list[str]): Ordered list of class labels.
+
+    Returns:
+        dict: Evaluation dictionary encompassing raw arrays, aggregated accuracy, 
+              ROC_AUC score, and confusion matrix structures.
+    """
     model.eval()
     
     all_preds = []
@@ -147,6 +175,7 @@ def evaluate_model(model, dataloader, device, classes):
 
 
 def main():
+    """Main CLI entry point for executing model evaluation and plotting results."""
     config = Config()
     
     # Print device info

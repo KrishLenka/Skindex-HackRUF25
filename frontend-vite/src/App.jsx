@@ -10,7 +10,14 @@ import Profile     from "@/components/Profile";
 import AIAssistant from "@/components/AIAssistant";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 
-// Wrapper that redirects unauthenticated users to /login
+/**
+ * Route wrapper that enforces authentication.
+ * Redirects unauthenticated users to the `/login` route.
+ *
+ * @param {Object} props - React props.
+ * @param {React.ReactNode} props.children - The child components to render if authenticated.
+ * @returns {React.ReactNode} Modifies the render tree based on auth state.
+ */
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   if (loading) return (
@@ -22,6 +29,12 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+/**
+ * Global application header containing branding and navigation links.
+ * Automatically adapts UI based on current user authenticated state.
+ *
+ * @returns {JSX.Element} The Header component.
+ */
 const Header = () => {
   const { user, logout } = useAuth();
 
@@ -85,6 +98,12 @@ const Header = () => {
   );
 };
 
+/**
+ * The root Application component routing the Skindex frontend.
+ * Provides global contexts (Auth) and top-level navigation structure.
+ *
+ * @returns {JSX.Element} The root application routing structure.
+ */
 export default function App() {
   return (
     <BrowserRouter>

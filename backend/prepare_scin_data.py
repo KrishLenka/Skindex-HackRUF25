@@ -33,6 +33,14 @@ LABELS_CSV = "dataset/scin_labels.csv"
 
 
 def _sanitize_class(name: str) -> str:
+    """Sanitizes class folder names by removing invalid path characters.
+
+    Args:
+        name (str): Original string (e.g., class label).
+
+    Returns:
+        str: Sanitized file-system safe string.
+    """
     for c in r'\/:*?"<>|':
         name = name.replace(c, "_")
     s = name.strip()
@@ -40,6 +48,14 @@ def _sanitize_class(name: str) -> str:
 
 
 def _primary_label_from_weighted(cell) -> str | None:
+    """Extracts the primary (highest probability) label from a dictionary-like string.
+
+    Args:
+        cell (str | list): The CSV cell contents representing weighted labels.
+
+    Returns:
+        str | None: The max-weighted label, or None if invalid.
+    """
     if pd.isna(cell):
         return None
     try:
@@ -52,6 +68,17 @@ def _primary_label_from_weighted(cell) -> str | None:
 
 
 def load_scin_merged(scin_root: Path) -> pd.DataFrame:
+    """Loads and merges the SCIN case and label CSV files into one DataFrame.
+
+    Args:
+        scin_root (Path): Directory where SCIN CSV files exist.
+
+    Returns:
+        pd.DataFrame: Merged DataFrame grouping metadata and image paths.
+
+    Raises:
+        FileNotFoundError: If cases or labels CSV do not exist.
+    """
     scin_root = Path(scin_root)
     cases_path = scin_root / CASES_CSV
     labels_path = scin_root / LABELS_CSV
@@ -71,7 +98,19 @@ def build_case_records(
     min_cases_per_class: int,
     max_classes: int | None,
 ) -> tuple[list[dict], list[str]]:
-    """One record per case: case_id, label, list of existing image paths (relative to scin_root)."""
+    """Generates case-level structures containing valid primary labels and relative image paths.
+
+    Ensures that classes meet minimum count requirements and cuts off lower-count classes if
+    `max_classes` is enforced.
+
+    Args:
+        df (pd.DataFrame): Merged SCIN dataframe.
+        min_cases_per_class (int): Threshold representing minimum required classes to keep.
+        max_classes (int | None): Limit on number of classes to export.
+
+    Returns:
+        tuple[list[dict], list[str]]: List of valid records and a sorted list of class names.
+    """
     rows: list[dict] = []
     for _, row in df.iterrows():
         label = _primary_label_from_weighted(row.get(WEIGHTED_LABEL_COL))
@@ -119,6 +158,23 @@ def prepare_scin_layout(
     max_classes: int | None,
     symlink: bool,
 ) -> None:
+    """Prepares stratified Train/Val/Test directories by copying/symlinking SCIN files.
+
+    Args:
+        scin_root (Path): Directory of the raw SCIN dataset.
+        target_dir (Path): Output destination directory.
+        train_ratio (float): Ratio of dataset allocated to training.
+        val_ratio (float): Ratio allocated for validation.
+        test_ratio (float): Ratio allocated for testing.
+        seed (int): Random seed for reproducible stratified splitting.
+        min_cases_per_class (int): Minimum cases required to retain a class label.
+        max_classes (int | None): Max number of distinct class folders to output.
+        symlink (bool): Whether to create symlinks instead of physically copying files.
+
+    Raises:
+        ValueError: If ratio sums are not equivalent to 1.0.
+        RuntimeError: If data filters result in zero cases.
+    """
     if abs(train_ratio + val_ratio + test_ratio - 1.0) > 1e-6:
         raise ValueError("train_ratio + val_ratio + test_ratio must sum to 1")
 
@@ -164,6 +220,12 @@ def prepare_scin_layout(
     class_to_dir = {_sanitize_class(c): c for c in classes}
 
     def copy_case_images(split_name: str, split_records: list[dict]) -> None:
+        """Copies or symlinks images for a given split into the target directory structure.
+
+        Args:
+            split_name (str): The name of the dataset split (e.g., 'train', 'val').
+            split_records (list[dict]): List of case records to copy/symlink.
+        """
         for rec in tqdm(split_records, desc=f"{split_name}"):
             lab_dir = _sanitize_class(rec["label"])
             out_class = target_dir / split_name / lab_dir
@@ -209,6 +271,7 @@ def prepare_scin_layout(
 
 
 def main():
+    """CLI entry-point for parsing arguments and launching SCIN layout preparation."""
     p = argparse.ArgumentParser(description="Prepare SCIN dataset for train.py (folder layout)")
     p.add_argument(
         "--scin_root",

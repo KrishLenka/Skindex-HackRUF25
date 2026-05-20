@@ -29,17 +29,22 @@ def export_model_to_onnx(
     opset_version=14,
     verify=True
 ):
-    """
-    Export a PyTorch model to ONNX format.
+    """Exports a PyTorch model to ONNX format.
     
     Args:
-        model_path: Path to PyTorch model (.pth file)
-        onnx_path: Output path for ONNX model (.onnx file)
-        model_name: Architecture name (e.g., 'efficientnet_b0')
-        num_classes: Number of output classes
-        img_size: Input image size
-        opset_version: ONNX opset version (14 is widely supported)
-        verify: Whether to verify the exported model
+        model_path (str | Path): Path to the PyTorch model (.pth file).
+        onnx_path (str | Path): Output path for the ONNX model (.onnx file).
+        model_name (str, optional): Architecture name (e.g., 'efficientnet_b0'). Defaults to "efficientnet_b0".
+        num_classes (int, optional): Number of output classes. Defaults to 10.
+        img_size (int, optional): Input image size. Defaults to 224.
+        opset_version (int, optional): ONNX opset version. Defaults to 14.
+        verify (bool, optional): Whether to verify the exported model with dummy input. Defaults to True.
+        
+    Returns:
+        tuple[Path, dict]: The Path to the saved ONNX model, and a metadata dictionary.
+        
+    Raises:
+        FileNotFoundError: If the PyTorch model is not found at `model_path`.
     """
     
     print("="*70)
@@ -131,8 +136,15 @@ def export_model_to_onnx(
 
 
 def verify_onnx_model(onnx_path, dummy_input, original_model=None):
-    """
-    Verify that the ONNX model is valid and produces correct outputs.
+    """Verifies that the ONNX model is valid and produces outputs comparable to PyTorch.
+
+    Args:
+        onnx_path (str | Path): Path to the saved ONNX model.
+        dummy_input (torch.Tensor): A dummy input tensor to pipe through the models.
+        original_model (torch.nn.Module, optional): The original PyTorch model to compare against.
+
+    Returns:
+        bool: True if verification successfully completes.
     """
     
     # Check ONNX model validity
@@ -180,8 +192,14 @@ def verify_onnx_model(onnx_path, dummy_input, original_model=None):
 
 
 def test_onnx_inference(onnx_path, test_image_path=None):
-    """
-    Test ONNX model inference with a real image.
+    """Tests ONNX model inference with either a real image or a random tensor.
+
+    Args:
+        onnx_path (str | Path): Path to the ONNX model file.
+        test_image_path (str | Path, optional): Path to a test image. If None, a random tensor is used.
+
+    Returns:
+        tuple[int, float]: The predicted class index and its confidence probability.
     """
     print("\n" + "="*70)
     print("TESTING ONNX MODEL INFERENCE")
@@ -248,14 +266,28 @@ def test_onnx_inference(onnx_path, test_image_path=None):
 
 
 def softmax(x):
-    """Compute softmax values."""
+    """Computes softmax values for a given set of logits.
+
+    Args:
+        x (np.ndarray): An array of logit scores.
+
+    Returns:
+        np.ndarray: An array of probabilities summing to 1.
+    """
     exp_x = np.exp(x - np.max(x))
     return exp_x / exp_x.sum()
 
 
 def compare_inference_speed(pytorch_model_path, onnx_model_path, num_runs=100):
-    """
-    Compare inference speed between PyTorch and ONNX.
+    """Compares inference speed between PyTorch and ONNX Runtime sequentially.
+
+    Args:
+        pytorch_model_path (str | Path): Path to the PyTorch model.
+        onnx_model_path (str | Path): Path to the ONNX model.
+        num_runs (int, optional): Number of inference passes to benchmark. Defaults to 100.
+
+    Returns:
+        dict: Benchmarking results containing averages and speedup multiplier.
     """
     print("\n" + "="*70)
     print("COMPARING INFERENCE SPEED: PYTORCH vs ONNX")

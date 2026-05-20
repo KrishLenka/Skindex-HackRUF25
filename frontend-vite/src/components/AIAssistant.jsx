@@ -15,6 +15,12 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+/**
+ * Renders the top navigation header specific to the standalone Clinical Assistant view.
+ * Note: A unified Header is also provided in App.jsx.
+ *
+ * @returns {JSX.Element} The header component.
+ */
 const Header = () => {
   return (
     <header className="bg-white border-b-2 border-blue-800">
@@ -70,6 +76,10 @@ const Header = () => {
 };
 
 /*
+/**
+ * Deprecated clinical resources sidebar.
+ * @returns {JSX.Element} The sidebar block.
+ */
 const Sidebar = () => {
   return (
     <aside className="w-64 bg-gray-100 border-r border-gray-300">
@@ -131,6 +141,12 @@ const Sidebar = () => {
 };
 */
 
+/**
+ * Renders the Clinical Decision Support AI chatbot interface.
+ * Implements a message thread, simulated typing state, and predefined clinical query buttons.
+ *
+ * @returns {JSX.Element} The AIAssistant component.
+ */
 const AIAssistant = () => {
   const [messages, setMessages] = useState([
     {
@@ -145,6 +161,9 @@ const AIAssistant = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const messagesEndRef = useRef(null);
 
+  /**
+   * Snaps the message container scroll view to the bottom-most message.
+   */
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -162,6 +181,11 @@ const AIAssistant = () => {
     "Topical corticosteroid potency classification"
   ];
 
+  /**
+   * Dispatches the user's input to the backend diagnosis chat API.
+   * Appends the conversation history and updates local state.
+   * @returns {Promise<void>}
+   */
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
@@ -211,6 +235,10 @@ const AIAssistant = () => {
     }
   };
 
+  /**
+   * Traps the Enter key when typing to submit the message directly.
+   * @param {React.KeyboardEvent} e - Key down event.
+   */
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -218,6 +246,10 @@ const AIAssistant = () => {
     }
   };
 
+  /**
+   * Pre-fills the chat input with a common query from the examples block.
+   * @param {string} query - The clinical query text.
+   */
   const handleQueryClick = (query) => {
     setInputMessage(query);
   };

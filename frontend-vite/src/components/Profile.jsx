@@ -42,6 +42,17 @@ const TEXTURE_OPTIONS = [
   { value: "FLUID_FILLED",        label: "Fluid Filled" },
 ];
 
+/**
+ * A reusable controlled select dropdown layout element for the profile form.
+ *
+ * @param {Object} props - React props.
+ * @param {string} props.label - Human-readable label for the field.
+ * @param {string} props.value - The currently selected internal value.
+ * @param {Function} props.onChange - State mutator callback function.
+ * @param {Array<{value: string, label: string}> | Array<string>} props.options - Selectable options.
+ * @param {string} props.placeholder - The default unbound prompt text.
+ * @returns {JSX.Element} Select form control block.
+ */
 function SelectField({ label, value, onChange, options, placeholder }) {
   return (
     <div>
@@ -71,6 +82,12 @@ const SEVERITY_COLORS = {
   High:     "bg-red-100 text-red-800 border-red-200",
 };
 
+/**
+ * The authenticated user's dashboard view.
+ * Handles updating of their demographic profile and rendering of past upload history.
+ *
+ * @returns {JSX.Element | null} The Profile component or null if no user is authenticated.
+ */
 export default function Profile() {
   const { user, token, updateProfile, logout } = useAuth();
   const navigate                               = useNavigate();
@@ -123,6 +140,11 @@ export default function Profile() {
     fetchScans();
   }, [fetchScans]);
 
+  /**
+   * Opens the detail modal for a given scan and fetches full scan JSON blob data.
+   *
+   * @param {Object} scan - The slim summary scan object to expand.
+   */
   const openScan = (scan) => {
     setSelectedScan(scan);
     setScanDetail(null);
@@ -134,11 +156,19 @@ export default function Profile() {
       .finally(() => setDetailLoading(false));
   };
 
+  /**
+   * Closes the scan detail modal and resets state.
+   */
   const closeModal = () => {
     setSelectedScan(null);
     setScanDetail(null);
   };
 
+  /**
+   * Initiates a delete request for a specific scan.
+   * 
+   * @param {string|number} scanId - The ID of the scan.
+   */
   const deleteScan = async (scanId) => {
     if (!window.confirm("Delete this scan? This cannot be undone.")) return;
     setDeleting(true);
@@ -156,8 +186,19 @@ export default function Profile() {
     }
   };
 
+  /**
+   * A curried state setter hook generator.
+   *
+   * @param {string} field - The demographic profile string key.
+   * @returns {Function} A setter function for that field.
+   */
   const set = (field) => (value) => setForm((prev) => ({ ...prev, [field]: value }));
 
+  /**
+   * Dispatches the local profile state payload securely to the backend for update.
+   *
+   * @param {React.FormEvent} e - Form event action.
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -174,6 +215,9 @@ export default function Profile() {
     }
   };
 
+  /**
+   * Invokes the auth context's token wipe handler, effectively concluding the active session.
+   */
   const handleLogout = () => {
     logout();
     navigate("/");

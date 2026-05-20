@@ -7,7 +7,10 @@ import { Activity, Upload, MessageCircle, Library } from "lucide-react";
 import Home from "@/components/ui/Home";   // ← points to the file you just made
 
 
-// Simple, single Header component (no breadcrumb, no search box)
+/**
+ * Simple, single Header component (no breadcrumb, no search box).
+ * @returns {JSX.Element} The Header component.
+ */
 const Header = () => (
   <header className="bg-white border-b-2 border-blue-800">
     <div className="w-full px-4">
@@ -44,6 +47,10 @@ const Header = () => (
   <Route path="/analyze" element={<ImageUpload />} />
 </Routes>
 
+/**
+ * Root Application component.
+ * @returns {JSX.Element} The main App component.
+ */
 function App() {
   return (
     <div className="App">

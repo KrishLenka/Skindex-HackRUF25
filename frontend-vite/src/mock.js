@@ -153,11 +153,20 @@ export const mockImageAnalysisSteps = [
 ];
 
 // Helper functions for mock data
+/**
+ * Retrieves a random mock analysis result.
+ * @returns {Object} A random mock diagnostic result object.
+ */
 export const getRandomAnalysisResult = () => {
   const randomIndex = Math.floor(Math.random() * mockAnalysisResults.length);
   return mockAnalysisResults[randomIndex];
 };
 
+/**
+ * Simulates a progressive analysis loading state over time.
+ * @param {Function} callback - Function called with the current progress percentage (0-100).
+ * @returns {number} The interval ID used for the simulation.
+ */
 export const simulateAnalysisProgress = (callback) => {
   let progress = 0;
   const interval = setInterval(() => {
@@ -171,6 +180,11 @@ export const simulateAnalysisProgress = (callback) => {
   return interval;
 };
 
+/**
+ * Searches the mock chat responses for keywords matching the given message.
+ * @param {string} message - The user input message.
+ * @returns {string} The appropriate canned response or a default fallback.
+ */
 export const findChatResponse = (message) => {
   const lowerMessage = message.toLowerCase();
   for (let response of mockChatResponses) {

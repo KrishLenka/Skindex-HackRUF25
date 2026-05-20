@@ -21,6 +21,10 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+/**
+ * Header component specific to the Component Library viewer.
+ * @returns {JSX.Element} The preview header.
+ */
 const Header = () => {
   return (
     <header className="bg-white border-b-2 border-blue-800">
@@ -75,6 +79,10 @@ const Header = () => {
 };
 
 /*
+/**
+ * Deprecated or inactive Sidebar navigation.
+ * @returns {JSX.Element} The sidebar block.
+ */
 const Sidebar = () => {
   return (
     <aside className="w-64 bg-gray-100 border-r border-gray-300">
@@ -131,6 +139,10 @@ const Sidebar = () => {
 };
 */
 
+/**
+ * Main viewer layout for previewing the DermAI styled component dictionary.
+ * @returns {JSX.Element} The application component library preview wrapper.
+ */
 const ComponentLibrary = () => {
   const [inputValue, setInputValue] = useState('');
   const [progress, setProgress] = useState(65);

@@ -25,6 +25,20 @@ db = SQLAlchemy()
 # ---------------------------------------------------------------------------
 
 class User(db.Model):
+    """Represents a registered user in the database.
+
+    Attributes:
+        id (int): Primary key.
+        name (str): Full name of the user.
+        email (str): Unique email address used for login.
+        password_hash (str): Securely hashed password.
+        age_group (str, optional): Demographic age demographic (e.g., "18-29").
+        sex_at_birth (str, optional): Demographic sex at birth.
+        fitzpatrick (str, optional): Demographic Fitzpatrick skin type.
+        ethnicity (str, optional): Demographic ethnicity.
+        texture (str, optional): Demographic skin texture.
+        created_at (datetime.datetime): Timestamp of account creation.
+    """
     __tablename__ = "users"
 
     id            = db.Column(db.Integer, primary_key=True)
@@ -47,6 +61,11 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     def to_dict(self):
+        """Serializes the user instance to a dictionary.
+
+        Returns:
+            dict: A dictionary representation of the user's demographic and account data.
+        """
         return {
             "id":           self.id,
             "name":         self.name,
@@ -65,6 +84,21 @@ class User(db.Model):
 # ---------------------------------------------------------------------------
 
 class Scan(db.Model):
+    """Represents a skin condition scan submitted by a user.
+
+    Attributes:
+        id (int): Primary key.
+        user_id (int): Foreign key linking to the User.
+        created_at (datetime.datetime): Timestamp when the scan was uploaded.
+        body_part (str, optional): The body part scanned.
+        symptoms_json (str, optional): JSON string list of symptoms.
+        description (str, optional): Free-text description provided by the user.
+        image_b64 (str, optional): Base64 encoded image data string.
+        condition (str, optional): Evaluated primary skin condition.
+        confidence (float, optional): Model confidence score.
+        severity (str, optional): Severity rating.
+        recommendations_json (str, optional): JSON string list of recommendations.
+    """
     __tablename__ = "scans"
 
     id                   = db.Column(db.Integer, primary_key=True)
@@ -80,7 +114,13 @@ class Scan(db.Model):
     recommendations_json = db.Column(db.Text, nullable=True)   # JSON array
 
     def to_summary(self):
-        """Lightweight representation for list views (no image_b64)."""
+        """Returns a lightweight representation of the scan for list views.
+
+        Ony includes summary metadata, omitting the heavy `image_b64` string.
+
+        Returns:
+            dict: Summary dictionary of the scan.
+        """
         return {
             "id":         self.id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -92,7 +132,11 @@ class Scan(db.Model):
         }
 
     def to_dict(self):
-        """Full representation including image data for detail view."""
+        """Returns a full representation of the scan including image data.
+
+        Returns:
+            dict: Detailed dictionary of the scan.
+        """
         d = self.to_summary()
         d["description"]     = self.description
         d["image_b64"]       = self.image_b64
@@ -105,6 +149,14 @@ class Scan(db.Model):
 # ---------------------------------------------------------------------------
 
 def _issue_token(user_id: int) -> str:
+    """Issues a JSON Web Token (JWT) for a specific user.
+
+    Args:
+        user_id (int): The ID of the authenticated user.
+
+    Returns:
+        str: Encoded JWT string expiring in 7 days.
+    """
     payload = {
         "user_id": user_id,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7),
@@ -113,9 +165,19 @@ def _issue_token(user_id: int) -> str:
 
 
 def token_required(f):
-    """Decorator that validates the Bearer JWT and injects `current_user`."""
+    """Decorator that validates a Bearer JWT in the request headers.
+
+    If valid, it injects the `current_user` User object into the wrapped route.
+
+    Args:
+        f (callable): The route function to wrap.
+
+    Returns:
+        callable: The wrapped function or a 401 JSON error response.
+    """
     @wraps(f)
     def decorated(*args, **kwargs):
+        """Wrapper function that performs the JWT validation and user injection."""
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return jsonify({"error": "Authorization token missing"}), 401
@@ -144,6 +206,14 @@ auth_bp = Blueprint("auth", __name__)
 
 @auth_bp.route("/auth/register", methods=["POST"])
 def register():
+    """Registers a new user account.
+
+    Expects JSON payload with `name`, `email`, and `password`.
+
+    Returns:
+        tuple[Response, int]: JSON response with a token and user dict, and 201 status,
+                              or JSON error message with 400/409 status.
+    """
     data     = request.get_json(silent=True) or {}
     name     = (data.get("name")     or "").strip()
     email    = (data.get("email")    or "").strip().lower()
@@ -171,6 +241,13 @@ def register():
 
 @auth_bp.route("/auth/login", methods=["POST"])
 def login():
+    """Authenticates a user and issues a JWT session token.
+
+    Expects JSON payload with `email` and `password`.
+
+    Returns:
+        tuple[Response, int]: JSON response with `token` and `user` data, or a 401/400 error.
+    """
     data     = request.get_json(silent=True) or {}
     email    = (data.get("email")    or "").strip().lower()
     password =  data.get("password") or ""
@@ -188,12 +265,30 @@ def login():
 @auth_bp.route("/auth/me", methods=["GET"])
 @token_required
 def get_me(current_user):
+    """Fetches the currently authenticated user's profile information.
+
+    Args:
+        current_user (User): The authenticated User object (injected).
+
+    Returns:
+        Response: JSON representation of the current user.
+    """
     return jsonify({"user": current_user.to_dict()})
 
 
 @auth_bp.route("/auth/profile", methods=["PUT"])
 @token_required
 def update_profile(current_user):
+    """Updates the demographic profile of the authenticated user.
+
+    Expects an optional JSON payload with profile fields (e.g., `age_group`, `ethnicity`).
+
+    Args:
+        current_user (User): The authenticated User object (injected).
+
+    Returns:
+        Response: JSON representation of the updated user.
+    """
     data = request.get_json(silent=True) or {}
 
     allowed = ["name", "age_group", "sex_at_birth", "fitzpatrick", "ethnicity", "texture"]
@@ -212,6 +307,14 @@ def update_profile(current_user):
 @auth_bp.route("/scans", methods=["POST"])
 @token_required
 def create_scan(current_user):
+    """Creates a new scan record for the user.
+
+    Args:
+        current_user (User): The authenticated User object (injected).
+
+    Returns:
+        tuple[Response, int]: JSON response of the created scan summary and a 201 status code.
+    """
     data = request.get_json(silent=True) or {}
     scan = Scan(
         user_id=current_user.id,
@@ -232,6 +335,14 @@ def create_scan(current_user):
 @auth_bp.route("/scans", methods=["GET"])
 @token_required
 def list_scans(current_user):
+    """Lists all scans associated with the authenticated user.
+
+    Args:
+        current_user (User): The authenticated User object (injected).
+
+    Returns:
+        Response: JSON array of scan summaries (omitting full image base64 data).
+    """
     scans = (
         Scan.query
         .filter_by(user_id=current_user.id)
@@ -244,6 +355,15 @@ def list_scans(current_user):
 @auth_bp.route("/scans/<int:scan_id>", methods=["GET"])
 @token_required
 def get_scan(current_user, scan_id):
+    """Retrieves full details of a specific scan, including the image data.
+
+    Args:
+        current_user (User): The authenticated User object (injected).
+        scan_id (int): The database ID of the scan.
+
+    Returns:
+        tuple[Response, int]: JSON representation of the detailed scan, or a 404 error if not found.
+    """
     scan = Scan.query.filter_by(id=scan_id, user_id=current_user.id).first()
     if not scan:
         return jsonify({"error": "Scan not found"}), 404
@@ -253,6 +373,15 @@ def get_scan(current_user, scan_id):
 @auth_bp.route("/scans/<int:scan_id>", methods=["DELETE"])
 @token_required
 def delete_scan(current_user, scan_id):
+    """Deletes a specific scan belonging to the user from the database.
+
+    Args:
+        current_user (User): The authenticated User object (injected).
+        scan_id (int): The database ID of the scan to delete.
+
+    Returns:
+        tuple[Response, int]: JSON `{ok: True}` on success, or a 404 error if not found.
+    """
     scan = Scan.query.filter_by(id=scan_id, user_id=current_user.id).first()
     if not scan:
         return jsonify({"error": "Scan not found"}), 404

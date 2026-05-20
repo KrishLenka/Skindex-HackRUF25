@@ -3,6 +3,12 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 
+/**
+ * Renders the introductory marketing landing page for DermAI.
+ * Features animated promotional copy and a primary call-to-action out to the app.
+ *
+ * @returns {JSX.Element} The Home view component.
+ */
 export default function Home() {
   return (
     <div className="min-h-[calc(100vh-64px)] relative overflow-hidden">

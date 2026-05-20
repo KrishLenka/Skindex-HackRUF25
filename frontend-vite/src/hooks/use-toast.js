@@ -101,6 +101,11 @@ function dispatch(action) {
   })
 }
 
+/**
+ * Imperative toast dispatcher pushing new toast structures to global state.
+ * @param {Object} props - Configuration for the toast.
+ * @returns {Object} Controls dict mapping to the newly minted toast.
+ */
 function toast({
   ...props
 }) {
@@ -132,6 +137,10 @@ function toast({
   }
 }
 
+/**
+ * React Hook for binding component lifecycle to global toast stack state.
+ * @returns {Object} Current bound state with dispatcher callbacks `toast` and `dismiss`.
+ */
 function useToast() {
   const [state, setState] = React.useState(memoryState)
 
